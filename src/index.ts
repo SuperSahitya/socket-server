@@ -59,3 +59,7 @@ io.on("connection", (socket) => {
 httpServer.listen(5000, () => {
   console.log("Server running at http://localhost:5000");
 });
+
+app.get("/", (req: Request, res: Response) => {
+  res.json({ success: true });
+});
