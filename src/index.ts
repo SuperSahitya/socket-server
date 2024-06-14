@@ -324,3 +324,31 @@ app.post("/message", async (req: Request, res: Response) => {
     return res.status(500).send("Internal Server Error");
   }
 });
+
+app.get("/auth/status", async (req, res) => {
+  const token = req.cookies.token;
+
+  if (!token) {
+    return res.status(401).send({ authenticated: false });
+  }
+
+  const payload: Payload = jwt.verify(
+    token,
+    process.env.JWT_SECRET!
+  ) as Payload;
+
+  const { _id, userName } = payload;
+
+  const user: User | null = await users.findOne({
+    userName: userName,
+    _id: _id,
+  });
+
+  if (!user) {
+    return res.status(400).send("Username or Password incorrect");
+  }
+
+  return res
+    .status(200)
+    .send({ userName: user.userName, email: user.email, name: user.name });
+});
