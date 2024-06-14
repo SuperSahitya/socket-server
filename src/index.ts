@@ -90,8 +90,11 @@ app.use(
     origin: "http://localhost:3000",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   })
 );
+
+app.use(express.json());
 
 const httpServer = createServer(app);
 
@@ -198,6 +201,11 @@ httpServer.listen(5000, () => {
   console.log("Server running at http://localhost:5000");
 });
 
+app.get("/", (req: Request, res: Response) => {
+  console.log("Request Received");
+  res.status(200).send({ online: "true" });
+});
+
 app.post("/register", async (req: Request, res: Response) => {
   try {
     const body: UserInput = req.body;
@@ -209,7 +217,15 @@ app.post("/register", async (req: Request, res: Response) => {
         .status(400)
         .send("No Username, Email, Password or Name found.");
     }
-    console.log(body);
+
+    const alreadyExistingUser = await users.findOne({
+      $or: [{ email: body.email }, { userName: body.userName }],
+    });
+
+    if (alreadyExistingUser) {
+      return res.status(400).send("User Already Exists.");
+    }
+
     const hashedPassword = await bcrypt.hash(body.password, 10);
     const user = await users.create({
       email: body.email,
