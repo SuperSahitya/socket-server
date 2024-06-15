@@ -103,6 +103,7 @@ const io = new Server(httpServer, {
     origin: "http://localhost:3000",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   },
 });
 
@@ -110,6 +111,7 @@ app.use(cookieParser());
 
 io.use((socket, next) => {
   const cookiesString = socket.handshake.headers.cookie;
+  console.log("cookiesString: ", cookiesString);
   if (!cookiesString) {
     console.log("Unauthorized Access Prohibited");
     return next(new Error("Unauthorized Access Prohibited"));
@@ -117,7 +119,7 @@ io.use((socket, next) => {
 
   const cookies = cookie.parse(cookiesString);
   const token = cookies.token;
-
+  console.log("token: ", token);
   if (!token) {
     console.log("Unauthorized Access Prohibited");
     return next(new Error("Unauthorized Access Prohibited"));
@@ -137,6 +139,7 @@ io.use((socket, next) => {
       _id: _id,
     });
 
+    console.log("user: ", user);
     if (!user) {
       console.log("Unauthorized Access Prohibited");
       return next(new Error("Unauthorized Access Prohibited"));
@@ -153,8 +156,11 @@ io.on("connection", async (socket) => {
 
   const idMappings = await mappings.findOneAndUpdate(
     { userName: socket.userName },
-    { socketId: socket.id }
+    { socketId: socket.id },
+    { upsert: true }
   );
+
+  console.log("idMappings", idMappings);
 
   socket.on(
     "private-message",
@@ -178,7 +184,7 @@ io.on("connection", async (socket) => {
         }
 
         const receiverSocketId = receiverMapping?.socketId;
-        io.to(receiverSocketId).emit("message-room", message.content);
+        io.to(receiverSocketId).emit("private-message", message);
         if (callback)
           callback(`Message received by the server from ${socket.userName}`);
       } catch (error) {
@@ -208,15 +214,17 @@ app.get("/", (req: Request, res: Response) => {
 
 app.post("/register", async (req: Request, res: Response) => {
   try {
+    console.log("A user tried to register.", req.body);
     const body: UserInput = req.body;
     if (!body) {
-      return res.status(400).send("No Username, Email, Password, Name found.");
+      return res.status(400).send("No Registration Details found.");
     }
-    if (!body.email || !body.name || !body.userName || !body.password) {
-      return res
-        .status(400)
-        .send("No Username, Email, Password or Name found.");
-    }
+    // if (!body.email || !body.name || !body.userName || !body.password) {
+    //   return res
+    //     .status(400)
+    //     .send("No Username, Email, Password or Name found.");
+    // }
+    console.log(body.email, body.name, body.password, body.userName);
 
     const alreadyExistingUser = await users.findOne({
       $or: [{ email: body.email }, { userName: body.userName }],
@@ -226,7 +234,7 @@ app.post("/register", async (req: Request, res: Response) => {
       return res.status(400).send("User Already Exists.");
     }
 
-    const hashedPassword = await bcrypt.hash(body.password, 10);
+    const hashedPassword = await bcrypt.hash(body.password!, 10);
     const user = await users.create({
       email: body.email,
       name: body.name,
@@ -256,22 +264,31 @@ app.post("/register", async (req: Request, res: Response) => {
 
 app.post("/login", async (req: Request, res: Response) => {
   try {
+    connectToDatabase();
+    console.log("A user tried to log in.");
     const body: UserInput = req.body;
+    console.log(body);
     if (!body) {
-      return res.status(400).send("No Username or Password found.");
+      return res.status(400).send("No User Data sent.");
     }
-    if (!body.userName || !body.password) {
-      return res.status(400).send("No Username or Password found.");
-    }
-    const user: User | null = await users.findOne({
-      userName: body.userName,
-    });
+    // if (!body.userName || !body.password) {
+    //   return res.status(400).send("No Username or Password found.");
+    // }
+    const user: any = await users
+      .findOne({
+        userName: body.userName,
+      })
+      .catch((e) => {
+        console.log(e);
+      });
+
+    console.log(user);
     if (!user) {
       return res.status(400).send("Username or Password incorrect");
     }
-    const isPasswordMatch = await bcrypt.compare(body.password, user.password);
+    const isPasswordMatch = await bcrypt.compare(body.password!, user.password);
     if (!isPasswordMatch) {
-      return res.status(400).send("Username or Password incorrect");
+      return res.status(400).send("Password is incorrect");
     }
     const token = jwt.sign(
       { id: user._id, userName: user.userName },
@@ -345,6 +362,36 @@ app.get("/auth/status", async (req, res) => {
   const token = req.cookies.token;
 
   if (!token) {
+    return res.status(401).send("No Token Found");
+  }
+
+  const payload: Payload = jwt.verify(
+    token,
+    process.env.JWT_SECRET!
+  ) as Payload;
+
+  const { _id, userName } = payload;
+
+  console.log(payload);
+
+  const user: User | null = await users.findOne({
+    userName: userName,
+  });
+
+  if (!user) {
+    return res.status(400).send("Username or Password incorrect");
+  }
+
+  return res
+    .status(200)
+    .send({ userName: user.userName, email: user.email, name: user.name });
+});
+
+app.get("/messages/:receiverId", async (req: Request, res: Response) => {
+  const token = req.cookies.token;
+  const { receiverId } = req.params;
+
+  if (!token) {
     return res.status(401).send({ authenticated: false });
   }
 
@@ -364,7 +411,12 @@ app.get("/auth/status", async (req, res) => {
     return res.status(400).send("Username or Password incorrect");
   }
 
-  return res
-    .status(200)
-    .send({ userName: user.userName, email: user.email, name: user.name });
+  const messageFromReceiver = await messages.find({
+    $or: [
+      { senderId: userName, receiverId: receiverId },
+      { senderId: receiverId, receiverId: userName },
+    ],
+  });
+
+  res.status(200).send(messageFromReceiver);
 });
