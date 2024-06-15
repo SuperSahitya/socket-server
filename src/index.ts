@@ -111,7 +111,7 @@ app.use(cookieParser());
 
 io.use((socket, next) => {
   const cookiesString = socket.handshake.headers.cookie;
-  console.log("cookiesString: ", cookiesString);
+  // console.log("cookiesString: ", cookiesString);
   if (!cookiesString) {
     console.log("Unauthorized Access Prohibited");
     return next(new Error("Unauthorized Access Prohibited"));
@@ -119,7 +119,7 @@ io.use((socket, next) => {
 
   const cookies = cookie.parse(cookiesString);
   const token = cookies.token;
-  console.log("token: ", token);
+  // console.log("token: ", token);
   if (!token) {
     console.log("Unauthorized Access Prohibited");
     return next(new Error("Unauthorized Access Prohibited"));
@@ -139,7 +139,7 @@ io.use((socket, next) => {
       _id: _id,
     });
 
-    console.log("user: ", user);
+    // console.log("user: ", user);
     if (!user) {
       console.log("Unauthorized Access Prohibited");
       return next(new Error("Unauthorized Access Prohibited"));
@@ -160,7 +160,7 @@ io.on("connection", async (socket) => {
     { upsert: true }
   );
 
-  console.log("idMappings", idMappings);
+  // console.log("idMappings", idMappings);
 
   socket.on(
     "private-message",
@@ -214,7 +214,7 @@ app.get("/", (req: Request, res: Response) => {
 
 app.post("/register", async (req: Request, res: Response) => {
   try {
-    console.log("A user tried to register.", req.body);
+    // console.log("A user tried to register.", req.body);
     const body: UserInput = req.body;
     if (!body) {
       return res.status(400).send("No Registration Details found.");
@@ -224,7 +224,7 @@ app.post("/register", async (req: Request, res: Response) => {
     //     .status(400)
     //     .send("No Username, Email, Password or Name found.");
     // }
-    console.log(body.email, body.name, body.password, body.userName);
+    // console.log(body.email, body.name, body.password, body.userName);
 
     const alreadyExistingUser = await users.findOne({
       $or: [{ email: body.email }, { userName: body.userName }],
@@ -265,9 +265,9 @@ app.post("/register", async (req: Request, res: Response) => {
 app.post("/login", async (req: Request, res: Response) => {
   try {
     connectToDatabase();
-    console.log("A user tried to log in.");
+    // console.log("A user tried to log in.");
     const body: UserInput = req.body;
-    console.log(body);
+    // console.log(body);
     if (!body) {
       return res.status(400).send("No User Data sent.");
     }
@@ -282,7 +282,7 @@ app.post("/login", async (req: Request, res: Response) => {
         console.log(e);
       });
 
-    console.log(user);
+    // console.log(user);
     if (!user) {
       return res.status(400).send("Username or Password incorrect");
     }
@@ -372,7 +372,7 @@ app.get("/auth/status", async (req, res) => {
 
   const { _id, userName } = payload;
 
-  console.log(payload);
+  // console.log(payload);
 
   const user: User | null = await users.findOne({
     userName: userName,
@@ -388,6 +388,7 @@ app.get("/auth/status", async (req, res) => {
 });
 
 app.get("/messages/:receiverId", async (req: Request, res: Response) => {
+  // console.log("Messages Route Called.");
   const token = req.cookies.token;
   const { receiverId } = req.params;
 
