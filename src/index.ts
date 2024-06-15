@@ -242,7 +242,7 @@ app.post("/register", async (req: Request, res: Response) => {
       password: hashedPassword,
     });
     const token = jwt.sign(
-      { id: user._id, userName: user.userName },
+      { _id: user._id, userName: user.userName },
       process.env.JWT_SECRET!,
       {
         expiresIn: "10h",
@@ -291,7 +291,7 @@ app.post("/login", async (req: Request, res: Response) => {
       return res.status(400).send("Password is incorrect");
     }
     const token = jwt.sign(
-      { id: user._id, userName: user.userName },
+      { _id: user._id, userName: user.userName },
       process.env.JWT_SECRET!,
       {
         expiresIn: "10h",
@@ -419,4 +419,9 @@ app.get("/messages/:receiverId", async (req: Request, res: Response) => {
   });
 
   res.status(200).send(messageFromReceiver);
+});
+
+app.get("/logout", (req: Request, res: Response) => {
+  res.clearCookie("token", { httpOnly: true });
+  res.status(200).send("User logged out");
 });
