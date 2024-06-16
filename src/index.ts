@@ -1,4 +1,4 @@
-import express, { Express, Request, Response } from "express";
+import express, { Express, NextFunction, Request, Response } from "express";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -17,6 +17,16 @@ declare module "socket.io" {
     userName: string;
   }
 }
+
+declare global {
+  namespace Express {
+    interface Request {
+      user: User;
+    }
+  }
+}
+
+type ActionQuery = "send-request" | "accept-request" | "decline-request";
 
 async function connectToDatabase() {
   mongoose
@@ -39,6 +49,18 @@ const userSchema = new Schema({
 const mappingSchema = new Schema({
   userName: { type: String, required: true, unique: true },
   socketId: { type: String, required: true, unique: true },
+});
+
+const friendSchema = new Schema({
+  user1: { type: String, required: true },
+  user2: { type: String, required: true },
+  status: {
+    type: String,
+    enum: ["pending", "accepted", "declined"],
+    default: "pending",
+  },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 const messageSchema = new Schema({
@@ -83,6 +105,7 @@ interface Payload {
 const users = mongoose.model("users", userSchema);
 const messages = mongoose.model("messages", messageSchema);
 const mappings = mongoose.model("mappings", mappingSchema);
+const friends = mongoose.model("friends", friendSchema);
 
 const app: Express = express();
 app.use(
@@ -206,6 +229,38 @@ io.on("connection", async (socket) => {
 httpServer.listen(5000, () => {
   console.log("Server running at http://localhost:5000");
 });
+
+async function authenticate(req: Request, res: Response, next: NextFunction) {
+  const token = req.cookies.token;
+
+  if (!token) {
+    return res.status(401).send("No Token Found");
+  }
+
+  try {
+    const payload: Payload = jwt.verify(
+      token,
+      process.env.JWT_SECRET!
+    ) as Payload;
+
+    const { _id, userName } = payload;
+
+    const user: User | null = await users.findOne({
+      userName: userName,
+    });
+
+    if (!user) {
+      return res.status(400).send("Username or Password incorrect");
+    }
+
+    // Attach user to the request object
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("An Error Occured : ", error);
+    return res.status(500).send("Internal Server Error");
+  }
+}
 
 app.get("/", (req: Request, res: Response) => {
   console.log("Request Received");
@@ -425,4 +480,150 @@ app.get("/messages/:receiverId", async (req: Request, res: Response) => {
 app.get("/logout", (req: Request, res: Response) => {
   res.clearCookie("token", { httpOnly: true });
   res.status(200).send("User logged out");
+});
+
+app.post("/request/:receiverId", async (req: Request, res: Response) => {
+  const token = req.cookies.token;
+  const { receiverId } = req.params;
+  const query = req.query;
+
+  if (!query) {
+    return res.status(400).send("Please specify query.");
+  }
+
+  const action: ActionQuery = query.action as ActionQuery;
+
+  if (!action) {
+    return res.status(400).send("Please specify action query.");
+  }
+
+  if (!token) {
+    return res.status(401).send({ authenticated: false });
+  }
+
+  const payload: Payload = jwt.verify(
+    token,
+    process.env.JWT_SECRET!
+  ) as Payload;
+
+  const { _id, userName } = payload;
+
+  const user: User | null = await users.findOne({
+    userName: userName,
+    _id: _id,
+  });
+
+  if (!user) {
+    return res.status(400).send("Invalid User");
+  }
+
+  if (receiverId == userName) {
+    return res.status(400).send("Cannot send request to self.");
+  }
+
+  const receiver: User | null = await users.findOne({ userName: receiverId });
+
+  if (!receiver) {
+    return res.status(400).send("Receiver does not exist");
+  }
+
+  const friendRelation = await friends.findOne({
+    $or: [
+      { user1: userName, user2: receiverId },
+      { user2: userName, user1: receiverId },
+    ],
+  });
+
+  if (action == "send-request") {
+    if (friendRelation) {
+      if (friendRelation.status == "accepted") {
+        return res
+          .status(400)
+          .send(`You are already friends with ${receiverId}`);
+      } else {
+        return res
+          .status(400)
+          .send(`You have already sent a friend request to ${receiverId}`);
+      }
+    }
+
+    await friends.create({
+      user1: userName,
+      user2: receiverId,
+    });
+
+    return res.status(201).send(`Friend requets sent to ${receiverId}`);
+  } else if (action == "accept-request") {
+    if (friendRelation) {
+      if (friendRelation.status == "accepted") {
+        return res
+          .status(400)
+          .send(`You are already friends with ${receiverId}`);
+      } else if (friendRelation.status == "declined") {
+        return res
+          .status(400)
+          .send(`You have a friend request from ${receiverId}`);
+      }
+    }
+    await friends.updateOne(
+      { user2: userName, user1: receiverId },
+      { status: "accepted" }
+    );
+
+    return res.status(201).send(`Friend requets accepted to ${receiverId}`);
+  } else if (action == "decline-request") {
+    if (friendRelation) {
+      if (friendRelation.status == "accepted") {
+        return res
+          .status(400)
+          .send(`You are already friends with ${receiverId}`);
+      } else if (friendRelation.status == "declined") {
+        return res
+          .status(400)
+          .send(`You have declined request from ${receiverId}`);
+      }
+    }
+    await friends.updateOne(
+      { user2: userName, user1: receiverId },
+      { status: "declined" }
+    );
+
+    return res.status(201).send(`Friend requets declined from ${receiverId}`);
+  } else {
+    return res.status(201).send(`Invalid Action ${action}`);
+  }
+});
+
+app.get("/friends", async (req: Request, res: Response) => {
+  const token = req.cookies.token;
+
+  if (!token) {
+    return res.status(401).send({ authenticated: false });
+  }
+
+  const payload: Payload = jwt.verify(
+    token,
+    process.env.JWT_SECRET!
+  ) as Payload;
+
+  const { _id, userName } = payload;
+
+  const user: User | null = await users.findOne({
+    userName: userName,
+    _id: _id,
+  });
+
+  if (!user) {
+    return res.status(400).send("Invalid User");
+  }
+
+  const friendsList = await friends.find({
+    $or: [{ user1: userName }, { user2: userName }],
+  });
+
+  if (friendsList) {
+    res.status(200).send(friendsList);
+  } else {
+    res.status(200).send({ message: "No Friends Found" });
+  }
 });
