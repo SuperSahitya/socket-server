@@ -191,6 +191,20 @@ io.on("connection", async (socket) => {
       try {
         const { receiverId, content } = data;
         console.log("Received message for room: ", data);
+
+        const relation = await friends.findOne({
+          $or: [
+            { user1: socket.userName, user2: receiverId, status: "accepted" },
+            { user2: socket.userName, user1: receiverId, status: "accepted" },
+          ],
+        });
+
+        if (!relation) {
+          console.error(`You are not friends with ${receiverId}`);
+          callback(`You are not friends with ${receiverId}`);
+          return;
+        }
+
         const message = await messages.create({
           senderId: socket.userName,
           receiverId: receiverId,
@@ -209,7 +223,10 @@ io.on("connection", async (socket) => {
         const receiverSocketId = receiverMapping?.socketId;
         io.to(receiverSocketId).emit("private-message", message);
         if (callback)
-          callback(`Message received by the server from ${socket.userName}`);
+          callback(
+            null,
+            `Message received by the server from ${socket.userName}`
+          );
       } catch (error) {
         console.error("Internal Socket Error: ", error);
       }
