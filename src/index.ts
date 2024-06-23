@@ -270,7 +270,6 @@ async function authenticate(req: Request, res: Response, next: NextFunction) {
       return res.status(400).send("Username or Password incorrect");
     }
 
-    // Attach user to the request object
     req.user = user;
     next();
   } catch (error) {
@@ -286,17 +285,10 @@ app.get("/", (req: Request, res: Response) => {
 
 app.post("/register", async (req: Request, res: Response) => {
   try {
-    // console.log("A user tried to register.", req.body);
     const body: UserInput = req.body;
     if (!body) {
       return res.status(400).send("No Registration Details found.");
     }
-    // if (!body.email || !body.name || !body.userName || !body.password) {
-    //   return res
-    //     .status(400)
-    //     .send("No Username, Email, Password or Name found.");
-    // }
-    // console.log(body.email, body.name, body.password, body.userName);
 
     const alreadyExistingUser = await users.findOne({
       $or: [{ email: body.email }, { userName: body.userName }],
@@ -337,15 +329,10 @@ app.post("/register", async (req: Request, res: Response) => {
 app.post("/login", async (req: Request, res: Response) => {
   try {
     connectToDatabase();
-    // console.log("A user tried to log in.");
     const body: UserInput = req.body;
-    // console.log(body);
     if (!body) {
       return res.status(400).send("No User Data sent.");
     }
-    // if (!body.userName || !body.password) {
-    //   return res.status(400).send("No Username or Password found.");
-    // }
     const user: any = await users
       .findOne({
         userName: body.userName,
@@ -354,7 +341,6 @@ app.post("/login", async (req: Request, res: Response) => {
         console.log(e);
       });
 
-    // console.log(user);
     if (!user) {
       return res.status(400).send("Username or Password incorrect");
     }
@@ -444,8 +430,6 @@ app.get("/auth/status", async (req, res) => {
 
   const { _id, userName } = payload;
 
-  // console.log(payload);
-
   const user: User | null = await users.findOne({
     userName: userName,
   });
@@ -460,7 +444,6 @@ app.get("/auth/status", async (req, res) => {
 });
 
 app.get("/messages/:receiverId", async (req: Request, res: Response) => {
-  // console.log("Messages Route Called.");
   const token = req.cookies.token;
   const { receiverId } = req.params;
 
